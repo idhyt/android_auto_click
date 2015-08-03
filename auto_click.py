@@ -139,18 +139,34 @@ class AutoClick():
         ) % (hash_size-1)
         return xml_content_hash
 
+    def get_current_ui_info(self):
+        package_name = None
+        xml_content = self.get_dump_xml()
+        nodes = self.get_nodes(xml_content)
+        for node in nodes:
+            if node.hasAttribute("package"):
+                package_name = node.getAttribute("package")
+                break
+        return package_name, xml_content
+
     def start_main_activity(self):
         self.__adb_shell.run_activity(self.__package_name, self.__main_activity_name)
 
     def click_event_begin(self, stop_deep=5):
         while self._click_event_queue.un_clicked_is_empty() is False:
             try:
+                # ensure current ui is target app ui
+                current_package_name, current_xml_content = self.get_current_ui_info()
+                if current_package_name != self.__package_name:
+                    self.start_main_activity()
+
+                # get click bound
                 un_clicked_bound = self._click_event_queue.get_un_clicked_bound()
                 if un_clicked_bound is None:
                     continue
                 output_log("[*] pop out one click event on %s" % un_clicked_bound["bounds"], is_print=True)
 
-                # check deep
+                # check click deep
                 click_deep = un_clicked_bound["deep"]
                 if click_deep > stop_deep:
                     continue
@@ -165,29 +181,31 @@ class AutoClick():
                     self.device.click(x, y)
                     self.device.wait.update()
 
-                # get new xml content and check is exist
-                xml_content = self.get_dump_xml()
-                xml_content_hash = self.get_xml_content_hash(xml_content)
+                # check new ui is target app ui or not, if not, then ignore it
+                current_package_name, current_xml_content = self.get_current_ui_info()
+                if current_package_name != self.__package_name:
+                    self.start_main_activity()
+                    continue
+
+                # get new xml content, if it is exist, ignore it
+                xml_content_hash = self.get_xml_content_hash(current_xml_content)
                 if self._click_event_queue.xml_content_hash_exist(xml_content_hash) is True:
                     continue
 
-                # if the new xml is not exist
+                # if the new xml is not exist then get all click bound and save it
                 self._click_event_queue.add_xml_content_hash(xml_content_hash)
-                nodes = self.get_nodes(xml_content)
+                nodes = self.get_nodes(current_xml_content)
                 click_able_nodes = self.get_click_able_nodes(nodes)
                 for click_able_node in click_able_nodes:
                     # if jump other app then ignore it and restart first screen
-                    if click_able_node["package"] != self.__package_name:
-                        # restart first screen
-                        self.start_main_activity()
-                        continue
-                    # get the new xml click point and add queue
-                    new_click_point = self.get_click_point(click_able_node["bounds"])
-                    if new_click_point is not None:
-                        new_click_bounds = click_points[:]
-                        new_click_bounds.append(new_click_point)
-                        self._click_event_queue.add_un_clicked_bound({"deep": click_deep + 1,
-                                                                      "bounds": new_click_bounds})
+                    if click_able_node["package"] == self.__package_name:
+                        # get the new xml click point and add queue
+                        new_click_point = self.get_click_point(click_able_node["bounds"])
+                        if new_click_point is not None:
+                            new_click_bounds = click_points[:]
+                            new_click_bounds.append(new_click_point)
+                            self._click_event_queue.add_un_clicked_bound({"deep": click_deep + 1,
+                                                                          "bounds": new_click_bounds})
                 # go back the first screen
                 for i in range(click_deep):
                     self.device.press.back()
