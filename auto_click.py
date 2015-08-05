@@ -43,7 +43,7 @@ class ClickEventQueue():
     def add_un_clicked_bound(self, bound):
         self.un_clicked_bounds.insert(0, bound)
 
-    def add_clicked_bounds(self, bound):
+    def add_clicked_bound(self, bound):
         self.clicked_bounds.append(bound)
 
     def get_clicked_count(self):
@@ -152,8 +152,9 @@ class AutoClick():
     def start_main_activity(self):
         self.__adb_shell.run_activity(self.__package_name, self.__main_activity_name)
 
-    def click_event_begin(self, stop_deep=5):
-        while self._click_event_queue.un_clicked_is_empty() is False:
+    def click_event_begin(self, stop_deep=4, stop_click_count=1000):
+        while self._click_event_queue.un_clicked_is_empty() is False \
+                and self._click_event_queue.get_clicked_count > stop_click_count:
             try:
                 # ensure current ui is target app ui
                 current_package_name, current_xml_content = self.get_current_ui_info()
@@ -165,6 +166,9 @@ class AutoClick():
                 if un_clicked_bound is None:
                     continue
                 output_log("[*] pop out one click event on %s" % un_clicked_bound["bounds"], is_print=True)
+
+                # add the bound into clicked bounds queue
+                self._click_event_queue.add_clicked_bound(un_clicked_bound)
 
                 # check click deep
                 click_deep = un_clicked_bound["deep"]
@@ -213,6 +217,8 @@ class AutoClick():
             except:
                 Logger.WriteException()
 
+        return True
+
 
 def auto_click_work(adb_shell, package_name, main_activity_name):
     auto_click = AutoClick(adb_shell, package_name, main_activity_name)
@@ -220,4 +226,11 @@ def auto_click_work(adb_shell, package_name, main_activity_name):
 
 
 if __name__ == "__main__":
-    auto_click_work(None, None, None)
+    # auto_click_work(None, None, None)
+    # ----- test code -----
+    from common.adb.adb_base import create_adb_shell
+    test_adb_shell = create_adb_shell(r"C:\android-sdk\platform-tools\adb.exe", "192.168.56.101", 5555)
+    test_adb_shell.restart_server()
+    test_adb_shell.connect()
+    auto_click_work(test_adb_shell, "com.tencent.mobileqq", ".activity.SplashActivity")
+    # ----- end -----
