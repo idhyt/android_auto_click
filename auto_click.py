@@ -10,9 +10,11 @@
 import re
 import hashlib
 import xml.dom.minidom
+
 from common.uiautomator import device
 
 from common.logger.Logger import Logger
+import auto_input
 
 import sys
 reload(sys)
@@ -61,21 +63,27 @@ class ClickEventQueue():
 
 class AutoClick():
     def __init__(self, adb_shell, package_name, main_activity_name):
+
+        # init private variable
         self.__adb_shell = adb_shell
         self.__package_name = package_name
         self.__main_activity_name = main_activity_name
+        self.__device = device
 
-        self.device = device
-        self.nodes = None
+        # init constant
         self.init_click_deep = 1
         self.stop_deep = 4
+        self.hash_size = 100000
 
+        # init object
         self.point_pattern = re.compile(r"^\[(\d+),(\d+)\]\[(\d+),(\d+)\]", re.IGNORECASE)
-        self._click_event_queue = None
+        # self._auto_input = auto_input.AutoInput(self.__device)
+
         # init click event queue
+        self._click_event_queue = None
         self.__init_click_event_queue()
 
-    # get first screen click bound
+    # get first screen click bound as seed queue
     def __init_click_event_queue(self):
         self._click_event_queue = ClickEventQueue()
 
@@ -94,13 +102,17 @@ class AutoClick():
             if self.__package_name is None:
                 self.set_package_name(click_able_node["package"])
 
+    # save app package name
     def set_package_name(self, package_name):
         self.__package_name = package_name
 
+    # get current activity xml content
     def get_dump_xml(self):
-        return self.device.dump()
+        return self.__device.dump()
 
-    def get_nodes(self, dump_xml, tag_name="node"):
+    # get dump xml node tag
+    @staticmethod
+    def get_nodes(dump_xml, tag_name="node"):
         try:
             dom = xml.dom.minidom.parseString(dump_xml)
             root = dom.documentElement
@@ -109,7 +121,9 @@ class AutoClick():
             Logger.WriteException()
             return None
 
-    def get_click_able_nodes(self, nodes):
+    # get click able node tag from dump xml
+    @staticmethod
+    def get_click_able_nodes(nodes):
         click_able_nodes = []
         if nodes is not None and isinstance(nodes, list):
             for node in nodes:
@@ -119,6 +133,7 @@ class AutoClick():
                     click_able_nodes.append({"package": node_package, "bounds": node_bound})
         return click_able_nodes
 
+    # calculate central position as click coordinate
     def get_click_point(self, click_bound):
         result = self.point_pattern.findall(click_bound)
         if len(result) > 0 and len(result[0]) == 4:
@@ -128,7 +143,8 @@ class AutoClick():
         return None
 
     # get xml content hash value
-    def get_xml_content_hash(self, xml_content, hash_size=100000):
+    def get_xml_content_hash(self, xml_content):
+        hash_size = self.hash_size
         if len(xml_content) > 256:
             xml_content_prefix, xml_content_suffix = xml_content[:256], xml_content[-256:]
         else:
@@ -140,42 +156,50 @@ class AutoClick():
         ) % (hash_size-1)
         return xml_content_hash
 
+    # get current activity package name and xml content
     def get_current_ui_info(self):
         package_name = None
         xml_content = self.get_dump_xml()
         nodes = self.get_nodes(xml_content)
-        for node in nodes:
-            if node.hasAttribute("package"):
-                package_name = node.getAttribute("package")
-                break
+        if nodes is not None:
+            for node in nodes:
+                if node.hasAttribute("package"):
+                    package_name = node.getAttribute("package")
+                    break
         return package_name, xml_content
 
+    # restart main activity
     def start_main_activity(self):
         self.__adb_shell.run_activity(self.__package_name, self.__main_activity_name)
 
+    # check current package name
     def verify_current_package(self):
         current_package_name, current_xml_content = self.get_current_ui_info()
         if current_package_name != self.__package_name:
             return False
         return True
 
+    # check click bound,
+    # if click deep greater than stop deep or not equal click point numbers, maybe some where error and ignore it
     def verify_click_bound(self, click_deep, click_points):
-        # if click deep greater than stop deep or not equal click point numbers, maybe some where error and ignore it
         if click_deep > self.stop_deep | click_deep != len(click_points):
             return False
         return True
 
+    # auto click begin
     def click_points_event(self, click_points):
         for click_point in click_points:
             x, y = click_point[0], click_point[1]
-            self.device.click(x, y)
-            self.device.wait.update()
+            self.__device.click(x, y)
+            self.__device.wait.update()
 
+    # after click event over, back to main activity by click deep
     def back_to_main_activity(self, click_deep):
         for i in range(click_deep, 0, -1):
-            self.device.press.back()
-            self.device.wait.update()
+            self.__device.press.back()
+            self.__device.wait.update()
 
+    # add new click event to queue
     def update_new_bounds_to_queue(self, xml_content, origin_click_deep, origin_click_points):
         nodes = self.get_nodes(xml_content)
         click_able_nodes = self.get_click_able_nodes(nodes)
@@ -190,6 +214,7 @@ class AutoClick():
                     self._click_event_queue.add_un_clicked_bound({"deep": origin_click_deep + 1,
                                                                   "bounds": new_click_bounds})
 
+    # main process
     def click_event_begin(self, stop_click_count=1000):
         while self._click_event_queue.un_clicked_is_empty() is False \
                 and self._click_event_queue.get_clicked_count > stop_click_count:
@@ -204,14 +229,16 @@ class AutoClick():
                     continue
                 output_log("[*] pop out one click event on %s" % un_clicked_bound["bounds"], is_print=True)
 
-                # add the bound into clicked bounds queue
+                # add the bound into clicked bounds queue and get click event bounds
                 self._click_event_queue.add_clicked_bound(un_clicked_bound)
-
                 click_deep, click_points = un_clicked_bound["deep"], un_clicked_bound["bounds"]
 
                 # check click deep
                 if self.verify_click_bound(click_deep, click_points) is False:
                     continue
+
+                # input text to android.widget.EditText
+                # self._auto_input.simulate_input_text()
 
                 # click event
                 self.click_points_event(click_points)
