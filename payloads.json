@@ -1,0 +1,13 @@
+{
+    "ignore": ["搜索", "search"],
+    "default": "testing",
+
+    "phone": {"tag": ["手机", "电话", "^1[3|4|5|8][0-9]\\d{4,8}$"],
+              "payload": "13843859438"},
+
+    "password": {"tag": [],
+                 "payload": "12345678"},
+
+    "verify_code": {"tag": ["验证码"],
+                    "payload": "123456"}
+}

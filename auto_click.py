@@ -20,6 +20,8 @@ import sys
 reload(sys)
 sys.setdefaultencoding("utf-8")
 
+AUTO_INPUT = False
+
 
 def output_log(log_string, is_print=False, is_write=False):
     if is_print is True:
@@ -77,7 +79,7 @@ class AutoClick():
 
         # init object
         self.point_pattern = re.compile(r"^\[(\d+),(\d+)\]\[(\d+),(\d+)\]", re.IGNORECASE)
-        # self._auto_input = auto_input.AutoInput(self.__device)
+        self._auto_input = auto_input.AutoInput(self.__device)
 
         # init click event queue
         self._click_event_queue = None
@@ -238,7 +240,8 @@ class AutoClick():
                     continue
 
                 # input text to android.widget.EditText
-                # self._auto_input.simulate_input_text()
+                if AUTO_INPUT is True:
+                    self._auto_input.simulate_input_text()
 
                 # click event
                 self.click_points_event(click_points)
